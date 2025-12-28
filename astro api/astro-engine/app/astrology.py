@@ -53,25 +53,29 @@ def parse_datetime(date_str: str, time_str: str, timezone_str: str) -> Tuple[flo
 def calculate_planetary_positions(jd: float, latitude: float, longitude: float) -> Dict[str, Any]:
     """Calculate planetary positions and house cusps."""
     try:
-        # Calculate houses (Placidus system)
+        # Tropical houses (Placidus)
         houses, ascmc = swe.houses(jd, latitude, longitude, b'P')
-        asc_long = ascmc[0]
-        
+        asc_tropical = ascmc[0]
+
+        # Lahiri ayanamsa for this Julian day (we already set SIDM_LAHIRI above)
+        ayan = swe.get_ayanamsa_ut(jd)
+
+        # Convert ascendant to sidereal longitude
+        asc_sidereal = (asc_tropical - ayan) % 360.0
+
         # Calculate planetary positions (sidereal)
         iflag = swe.FLG_SWIEPH | swe.FLG_SIDEREAL
-        
-        # Get Sun position
+
         sun = swe.calc_ut(jd, swe.SUN, iflag)
         sun_long = sun[0][0]
-        
-        # Get Moon position
+
         moon = swe.calc_ut(jd, swe.MOON, iflag)
         moon_long = moon[0][0]
-        
+
         return {
             "sun_long": sun_long,
             "moon_long": moon_long,
-            "asc_long": asc_long
+            "asc_long": asc_sidereal,
         }
     except Exception as e:
         raise RuntimeError(f"Astronomical calculation failed: {str(e)}")

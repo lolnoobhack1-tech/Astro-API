@@ -1,42 +1,33 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
-from .models import KundliRequest, KundliResponse
+# 1. IMPORT STRICT MODELS FROM models.py
+# (Do not define them here again!)
+from .models import (
+    KundliRequest, 
+    KundliResponse, 
+    CompatibilityRequest, 
+    CompatibilityResponse
+)
 from .astrology import generate_kundli
 from .compatibility import generate_ashta_koota
-
-# -----------------------------
-# Pydantic Models for Compatibility
-# -----------------------------
-class CompatibilityRequest(BaseModel):
-    kundli1: Dict[str, Any]
-    kundli2: Dict[str, Any]
-
-class CompatibilityResponse(BaseModel):
-    total_gunas: int
-    max_gunas: int
-    breakdown: Dict[str, Any]
-    verdict: str
 
 # -----------------------------
 # Initialize FastAPI
 # -----------------------------
 app = FastAPI(
     title="Kundli Astro Engine",
-    description="A production-ready Kundli & Compatibility API using Swiss Ephemeris (Lahiri Ayanamsa) and Ashta-Koota",
+    description="A production-ready Kundli & Compatibility API using Swiss Ephemeris and Parāśara Ashta-Koota",
     version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json"
 )
 
 # CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Restrict in production
+    allow_origins=["*"],  # Restrict this to your frontend domain in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -48,11 +39,7 @@ app.add_middleware(
 @app.post(
     "/generate-kundli",
     response_model=KundliResponse,
-    status_code=status.HTTP_200_OK,
-    responses={
-        400: {"description": "Invalid input data"},
-        500: {"description": "Internal server error"}
-    }
+    status_code=status.HTTP_200_OK
 )
 async def generate_kundli_api(request: KundliRequest) -> KundliResponse:
     """
@@ -79,33 +66,40 @@ async def generate_kundli_api(request: KundliRequest) -> KundliResponse:
         )
 
 # -----------------------------
-# Compatibility Endpoint
+# Compatibility Endpoint (UPDATED)
 # -----------------------------
 @app.post(
     "/calculate-compatibility",
     response_model=CompatibilityResponse,
-    status_code=status.HTTP_200_OK,
-    responses={
-        400: {"description": "Invalid input data"},
-        500: {"description": "Internal server error"}
-    }
+    status_code=status.HTTP_200_OK
 )
 async def calculate_compatibility_api(request: CompatibilityRequest) -> CompatibilityResponse:
     """
-    Calculate Ashta-Koota compatibility between two kundlis.
+    Calculate Ashta-Koota compatibility.
+    Uses strict Enums for Moon Sign and Nakshatra inputs.
     """
     try:
-        result = generate_ashta_koota(request.kundli1, request.kundli2)
+        # 2. UNWRAP THE REQUEST
+        # We explicitly extract the fields from the Pydantic model
+        # and pass them as strings to the logic function.
+        result = generate_ashta_koota(
+            bride_moon_sign=request.bride.moon_sign,
+            bride_nakshatra=request.bride.nakshatra,
+            groom_moon_sign=request.groom.moon_sign,
+            groom_nakshatra=request.groom.nakshatra
+        )
         return result
+
     except ValidationError as ve:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"error": "Validation Error", "details": ve.errors()}
         )
-    except KeyError as ke:
+    except ValueError as ve:
+        # Catches logical errors (e.g. invalid nakshatra names that slipped through)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error": "Missing required kundli key", "key": str(ke)}
+            detail={"error": "Logic Error", "message": str(ve)}
         )
     except Exception as e:
         import traceback
@@ -131,7 +125,7 @@ async def health_check() -> Dict[str, Any]:
         return {
             "status": "healthy",
             "version": "1.0.0",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "services": {
                 "database": "ok",
                 "cache": "ok"

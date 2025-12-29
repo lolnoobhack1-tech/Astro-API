@@ -46,10 +46,10 @@ GRAHA_MAITRI_FRIEND = {
     "Saturn": ["Mercury", "Venus"]
 }
 
-# NEUTRALS (SAMA) - FIXED MOON BUG HERE
+# NEUTRALS (SAMA)
 GRAHA_NEUTRAL = {
     "Sun": ["Mercury"],
-    "Moon": ["Mars", "Jupiter", "Venus", "Saturn"], # <-- FIXED: Moon has no enemies
+    "Moon": ["Mars", "Jupiter", "Venus", "Saturn"], 
     "Mars": ["Venus"],
     "Mercury": ["Mars", "Jupiter", "Saturn"],
     "Jupiter": ["Saturn"],
@@ -113,19 +113,33 @@ NADI = {
 }
 
 # ==========================================
-# 2. CORE LOGIC (SAFE)
+# 2. CORE LOGIC (CORRECTED SIGNATURE)
 # ==========================================
 
-def generate_ashta_koota(bride: Dict[str, Any], groom: Dict[str, Any]) -> Dict[str, Any]:
+def generate_ashta_koota(
+    bride_moon_sign: str,
+    bride_nakshatra: str,
+    groom_moon_sign: str,
+    groom_nakshatra: str
+) -> Dict[str, Any]:
+    
+    # 1. Validate Inputs (Fail Fast)
+    if bride_nakshatra not in NAKSHATRA_ORDER or groom_nakshatra not in NAKSHATRA_ORDER:
+        raise ValueError("Invalid Nakshatra Name")
+    
+    if bride_moon_sign not in RASHI_ORDER or groom_moon_sign not in RASHI_ORDER:
+        raise ValueError("Invalid Moon Sign")
+
+    # 2. Reconstruct Dicts for Logic (Keeps logic clean)
+    bride = {"moon_sign": bride_moon_sign, "nakshatra": bride_nakshatra}
+    groom = {"moon_sign": groom_moon_sign, "nakshatra": groom_nakshatra}
+
     score = 0
     breakdown = {}
 
-    # Self-Contained Index Lookup (Prevents API crashes)
-    try:
-        b_nak_idx = NAKSHATRA_ORDER.index(bride["nakshatra"])
-        g_nak_idx = NAKSHATRA_ORDER.index(groom["nakshatra"])
-    except ValueError:
-        return {"error": "Invalid Nakshatra Name"}
+    # Get Indices safely
+    b_nak_idx = NAKSHATRA_ORDER.index(bride["nakshatra"])
+    g_nak_idx = NAKSHATRA_ORDER.index(groom["nakshatra"])
 
     # 1. VARNA (1 Point)
     if VARNA_ORDER.index(VARNA_BY_RASHI[groom["moon_sign"]]) >= \
@@ -187,6 +201,7 @@ def generate_ashta_koota(bride: Dict[str, Any], groom: Dict[str, Any]) -> Dict[s
     # 7. BHAKOOT (7 Points)
     r1, r2 = RASHI_ORDER.index(bride["moon_sign"]), RASHI_ORDER.index(groom["moon_sign"])
     dist = (r2 - r1) % 12
+    # Bad distances: 6/8 (5,7), 2/12 (1,11), 9/5 (4,8)
     if dist in [1, 5, 7, 11, 4, 8]:
         breakdown["Bhakoot"] = 0
     else:
@@ -198,8 +213,8 @@ def generate_ashta_koota(bride: Dict[str, Any], groom: Dict[str, Any]) -> Dict[s
     score += breakdown["Nadi"]
 
     return {
-        "total_score": score,
-        "max_score": 36,
+        "total_gunas": int(score),      # Matches 'total_gunas' in models.py
+        "max_gunas": 36,
         "breakdown": breakdown,
         "verdict": "Good" if score >= 18 else "Low"
     }
